@@ -1,0 +1,11 @@
+{
+  "name": "gado-game",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Gado racing game served via npm start.",
+  "scripts": {
+    "start": "node server.js"
+  }
+}
+
+
