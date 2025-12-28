@@ -19,20 +19,20 @@ Before you begin, ensure you have the following installed on your system:
 
 If you have the repository URL:
 ```bash
-git clone <repository-url>
-cd 21
+git clone https://github.com/Zi-chyne/ite18finalproject.git
+cd ite18finalproject
 ```
 
 Or if you already have the files, navigate to the project directory:
 ```bash
-cd 21
+cd ite18finalproject
 ```
 
 ### Step 2: Verify Project Structure
 
 Ensure your project has the following structure:
 ```
-21/
+ite18finalproject/
 ├── gado/
 │   └── zion/
 │       ├── index.html
@@ -98,7 +98,7 @@ The game should load and you'll see the Gado Racing game interface.
 ## Project Structure
 
 ```
-21/
+ite18finalproject/
 ├── gado/
 │   └── zion/              # Game assets and files
 │       ├── index.html     # Main HTML file
@@ -155,82 +155,6 @@ This project can be deployed to various platforms:
 - **Heroku**: Add a `Procfile` with: `web: node server.js`
 - **Any Node.js hosting**: Ensure the server runs on the platform's specified port
 
-## Uploading to GitHub
-
-Follow these steps to upload your project to GitHub:
-
-### Prerequisites for GitHub
-
-- **Git** installed on your system
-  - Download from [git-scm.com](https://git-scm.com/)
-  - Verify installation: `git --version`
-- A **GitHub account**
-  - Sign up at [github.com](https://github.com/) if you don't have one
-
-### Step 1: Initialize Git Repository
-
-Open your terminal/command prompt in the project directory and run:
-
-```bash
-git init
-```
-
-### Step 2: Add All Files
-
-Add all project files to Git:
-
-```bash
-git add .
-```
-
-### Step 3: Create Initial Commit
-
-Commit your files:
-
-```bash
-git commit -m "Initial commit: Gado Racing Game"
-```
-
-### Step 4: Create GitHub Repository
-
-1. Go to [github.com](https://github.com/) and sign in
-2. Click the **"+"** icon in the top right corner
-3. Select **"New repository"**
-4. Enter a repository name (e.g., `gado-racing-game`)
-5. Choose **Public** or **Private** (as per your preference)
-6. **Do NOT** initialize with README, .gitignore, or license (we already have these)
-7. Click **"Create repository"**
-
-### Step 5: Connect Local Repository to GitHub
-
-After creating the repository, GitHub will show you commands. Use these (replace `<your-username>` and `<repository-name>` with your actual values):
-
-```bash
-git remote add origin https://github.com/<your-username>/<repository-name>.git
-git branch -M main
-git push -u origin main
-```
-
-**Note**: If you're using GitHub with authentication, you may need to:
-- Use a Personal Access Token instead of password
-- Or set up SSH keys for authentication
-
-### Step 6: Verify Upload
-
-1. Refresh your GitHub repository page
-2. You should see all your files including the README.md
-3. The README will automatically display on the repository's main page
-
-### Alternative: Using GitHub Desktop
-
-If you prefer a graphical interface:
-
-1. Download [GitHub Desktop](https://desktop.github.com/)
-2. Sign in with your GitHub account
-3. Click **"File" → "Add Local Repository"**
-4. Select your project folder
-5. Click **"Publish repository"** to upload to GitHub
-
 ## License
 
 This project is private and proprietary.
@@ -238,4 +162,3 @@ This project is private and proprietary.
 ## Support
 
 For issues or questions, please check the project repository or contact the development team.
-
