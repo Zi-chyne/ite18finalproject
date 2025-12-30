@@ -173,7 +173,13 @@ class Car {
 
 class Audio {
   constructor() {
-    this.audioCtx = new AudioContext();
+    // Create AudioContext in suspended state to avoid autoplay restrictions
+    this.audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+    
+    // Ensure it starts suspended
+    if (this.audioCtx.state === 'running') {
+      this.audioCtx.suspend();
+    }
 
     // volume
     this.destination = this.audioCtx.createGain();
@@ -181,20 +187,34 @@ class Audio {
     this.destination.connect(this.audioCtx.destination);
 
     this.files = {};
+    this.themeSource = null; // Store theme source to start it later
 
     let _self = this;
     this.load(ASSETS.AUDIO.theme, "theme", function (key) {
-      let source = _self.audioCtx.createBufferSource();
-      source.buffer = _self.files[key];
-
-      let gainNode = _self.audioCtx.createGain();
-      gainNode.gain.value = 0.6;
-      source.connect(gainNode);
-      gainNode.connect(_self.destination);
-
-      source.loop = true;
-      source.start(0);
+      // Don't start theme immediately - wait for user interaction
+      // Theme will be started when resume() is called
+      _self.themeBuffer = _self.files[key];
     });
+  }
+  
+  resume() {
+    if (this.audioCtx.state === 'suspended') {
+      this.audioCtx.resume();
+    }
+    
+    // Start theme music if it's loaded but not started yet
+    if (this.themeBuffer && !this.themeSource) {
+      this.themeSource = this.audioCtx.createBufferSource();
+      this.themeSource.buffer = this.themeBuffer;
+
+      let gainNode = this.audioCtx.createGain();
+      gainNode.gain.value = 0.6;
+      this.themeSource.connect(gainNode);
+      gainNode.connect(this.destination);
+
+      this.themeSource.loop = true;
+      this.themeSource.start(0);
+    }
   }
 
   get volume() {
@@ -206,6 +226,11 @@ class Audio {
   }
 
   play(key, pitch) {
+    // Resume AudioContext if suspended (required for autoplay policy)
+    if (this.audioCtx.state === 'suspended') {
+      this.audioCtx.resume();
+    }
+    
     if (this.files[key]) {
       let source = this.audioCtx.createBufferSource();
       source.buffer = this.files[key];
@@ -239,10 +264,14 @@ class Audio {
 // ------------------------------------------------------------
 
 const highscores = [];
+let newlyAddedScoreIndex = -1; // Track newly added score for highlighting
 
-const width = 800;
-const halfWidth = width / 2;
-const height = 500;
+// Dynamic dimensions - will be updated for fullscreen
+let width = 800;
+let halfWidth = width / 2;
+let height = 500;
+const defaultWidth = 800;
+const defaultHeight = 500;
 const roadW = 4000;
 const segL = 200;
 const camD = 0.2;
@@ -367,6 +396,11 @@ addEventListener(`keyup`, function (e) {
     e.preventDefault();
 
     if (inGame) return;
+    
+    // Resume AudioContext on user interaction (required for autoplay policy)
+    if (audio && audio.audioCtx) {
+      audio.resume();
+    }
 
     sleep(0)
       .then((_) => {
@@ -402,6 +436,11 @@ addEventListener(`keyup`, function (e) {
 
     reset();
   }
+  
+  if (e.code === "F11" || e.code === "KeyF") {
+    e.preventDefault();
+    toggleFullscreen();
+  }
 });
 
 // ------------------------------------------------------------
@@ -423,13 +462,21 @@ function update(step) {
   // left / right position
   playerX -= (lines[startPos].curve / 5000) * step * speed;
 
+  // Calculate scale factor for background position
+  const scaleFactor = height / defaultHeight;
+  // Background position needs to be scaled to match the scaled sprite sheet
+  // Each frame is 110px, so positions are: -220px (right), -110px (center), 0px (left)
+  const bgPosCenter = -110 * scaleFactor;
+  const bgPosRight = -220 * scaleFactor;
+  const bgPosLeft = 0;
+
   if (KEYS.ArrowRight)
-    (hero.style.backgroundPosition = "-220px 0"),
+    (hero.style.backgroundPosition = `${bgPosRight}px 0`),
       (playerX += 0.007 * step * speed);
   else if (KEYS.ArrowLeft)
-    (hero.style.backgroundPosition = "0 0"),
+    (hero.style.backgroundPosition = `${bgPosLeft}px 0`),
       (playerX -= 0.007 * step * speed);
-  else hero.style.backgroundPosition = "-110px 0";
+  else hero.style.backgroundPosition = `${bgPosCenter}px 0`;
 
   playerX = playerX.clamp(-3, 3);
 
@@ -480,8 +527,48 @@ function update(step) {
     text.classList.remove("blink");
     text.innerText = "LEADERBOARD";
 
-    highscores.push(lap.innerText);
-    highscores.sort();
+    // Update HUD one final time to ensure values match what's displayed
+    time.innerText = (Math.max(0, countDown | 0)).pad(3);
+    score.innerText = (scoreVal | 0).pad(8);
+
+    // Create score object with time, score, and lap
+    // Use the same values that are displayed on the HUD
+    const currentTime = Math.max(0, countDown | 0);
+    const currentScore = scoreVal | 0;
+    const currentLap = lap.innerText;
+    
+    const newScore = {
+      time: currentTime,
+      score: currentScore,
+      lap: currentLap
+    };
+
+    // Insert score in correct position (sorted by score descending)
+    newlyAddedScoreIndex = -1;
+    let inserted = false;
+    for (let i = 0; i < highscores.length; i++) {
+      if (currentScore > highscores[i].score) {
+        highscores.splice(i, 0, newScore);
+        newlyAddedScoreIndex = i;
+        inserted = true;
+        break;
+      }
+    }
+    
+    // If not inserted, add to end
+    if (!inserted) {
+      highscores.push(newScore);
+      newlyAddedScoreIndex = highscores.length - 1;
+    }
+
+    // Keep only top 12 scores
+    if (highscores.length > 12) {
+      highscores.pop();
+      if (newlyAddedScoreIndex >= 12) {
+        newlyAddedScoreIndex = -1; // Don't highlight if it was removed
+      }
+    }
+
     updateHighscore();
 
     inGame = false;
@@ -661,23 +748,79 @@ function reset() {
   hud.style.display = "none";
   home.style.display = "block";
   tacho.style.display = "block";
+  
+  // Hide leaderboard when reset (before game starts or if no scores)
+  updateHighscore();
 }
 
 function updateHighscore() {
   let hN = Math.min(12, highscores.length);
+  
+  // Hide leaderboard if no scores exist
+  if (hN === 0) {
+    highscore.classList.add("hidden");
+    return;
+  }
+  
+  // Show leaderboard if scores exist
+  highscore.classList.remove("hidden");
+  
+  // Ensure we have enough elements
+  while (highscore.children.length < hN) {
+    var element = document.createElement("div");
+    element.className = "leaderboard-entry";
+    highscore.appendChild(element);
+  }
+
   for (let i = 0; i < hN; i++) {
-    highscore.children[i].innerHTML = `${(i + 1).pad(2, "&nbsp;")}. ${
-      highscores[i]
-    }`;
+    const entry = highscore.children[i];
+    const scoreData = highscores[i];
+    
+    // Format: time: value, score: value, lap: value
+    entry.innerHTML = `${(i + 1).pad(2, "&nbsp;")}. time: ${scoreData.time.pad(3, "&nbsp;")}, score: ${scoreData.score.pad(8, "&nbsp;")}, lap: ${scoreData.lap}`;
+    
+    // Ensure entry is displayed
+    entry.style.display = "block";
+    entry.style.animationDelay = `${i * 0.05}s`;
+    
+    // Add highlight class if this is the newly added score
+    if (i === newlyAddedScoreIndex) {
+      entry.classList.add("new-score");
+      // Remove the class after animation completes
+      setTimeout(() => {
+        entry.classList.remove("new-score");
+      }, 3200);
+    } else {
+      entry.classList.remove("new-score");
+    }
+  }
+  
+  // Hide unused entries
+  for (let i = hN; i < highscore.children.length; i++) {
+    highscore.children[i].style.display = "none";
   }
 }
 
 function initThreeScene() {
   const container = document.getElementById("three-container");
-  if (!container || typeof THREE === "undefined") return;
+  if (!container) return;
+  
+  if (typeof THREE === "undefined") {
+    // Wait for THREE to load if not available yet
+    const tryInit = () => {
+      if (typeof THREE !== "undefined") {
+        initThreeScene();
+      }
+    };
+    // Listen for the load event
+    window.addEventListener('THREE_LOADED', tryInit, { once: true });
+    // Also check immediately in case THREE loaded before we set up the listener
+    setTimeout(tryInit, 0);
+    return;
+  }
 
-  const width3 = container.clientWidth || 800;
-  const height3 = container.clientHeight || 500;
+  const width3 = container.clientWidth || width;
+  const height3 = container.clientHeight || height;
 
   threeScene = new THREE.Scene();
 
@@ -725,17 +868,161 @@ function initThreeScene() {
   animateThree();
 }
 
+// Fullscreen functionality
+function updateGameDimensions() {
+  const gameElement = document.getElementById("game");
+  const heroElement = document.getElementById("hero");
+  
+  if (gameElement) {
+    gameElement.style.width = width + "px";
+    gameElement.style.height = height + "px";
+  }
+
+  if (heroElement) {
+    // Calculate scale factor based on screen size ratio
+    // Use height as primary scale since it affects perspective view
+    const scaleFactor = height / defaultHeight;
+    
+    // Scale the hero car proportionally (sprite sheet has 3 frames, each 110px wide)
+    const scaledWidth = ASSETS.IMAGE.HERO.width * scaleFactor;
+    const scaledHeight = ASSETS.IMAGE.HERO.height * scaleFactor;
+    
+    // Set element size to one frame size
+    heroElement.style.width = scaledWidth + "px";
+    heroElement.style.height = scaledHeight + "px";
+    
+    // Set background-size to the full sprite sheet size (3 frames = 330px total width)
+    const spriteSheetWidth = ASSETS.IMAGE.HERO.width * 3 * scaleFactor;
+    heroElement.style.backgroundSize = `${spriteSheetWidth}px ${scaledHeight}px`;
+    
+    // Update position based on scaled size
+    heroElement.style.top = height - (80 * scaleFactor) + "px";
+    heroElement.style.left = halfWidth - scaledWidth / 2 + "px";
+    
+    // Update transform scale to maintain the 1.4x CSS scale
+    heroElement.style.transform = "scale(1.4)";
+  }
+  
+  // Update three.js container size
+  const threeContainer = document.getElementById("three-container");
+  if (threeContainer) {
+    threeContainer.style.width = width + "px";
+    threeContainer.style.height = height + "px";
+  }
+  
+  // Update three.js renderer if it exists
+  if (threeRenderer && threeCamera) {
+    threeRenderer.setSize(width, height);
+    threeCamera.aspect = width / height;
+    threeCamera.updateProjectionMatrix();
+  }
+}
+
+function toggleFullscreen() {
+  const gameElement = document.getElementById("game");
+  if (!gameElement) return;
+  
+  if (!document.fullscreenElement && !document.webkitFullscreenElement && 
+      !document.mozFullScreenElement && !document.msFullscreenElement) {
+    // Enter fullscreen
+    if (gameElement.requestFullscreen) {
+      gameElement.requestFullscreen();
+    } else if (gameElement.webkitRequestFullscreen) {
+      gameElement.webkitRequestFullscreen();
+    } else if (gameElement.mozRequestFullScreen) {
+      gameElement.mozRequestFullScreen();
+    } else if (gameElement.msRequestFullscreen) {
+      gameElement.msRequestFullscreen();
+    }
+  } else {
+    // Exit fullscreen
+    if (document.exitFullscreen) {
+      document.exitFullscreen();
+    } else if (document.webkitExitFullscreen) {
+      document.webkitExitFullscreen();
+    } else if (document.mozCancelFullScreen) {
+      document.mozCancelFullScreen();
+    } else if (document.msExitFullscreen) {
+      document.msExitFullscreen();
+    }
+  }
+}
+
+function handleFullscreenChange() {
+  const isFullscreen = !!(document.fullscreenElement || document.webkitFullscreenElement || 
+                          document.mozFullScreenElement || document.msFullscreenElement);
+  
+  // Update fullscreen button icon
+  const fullscreenBtn = document.getElementById("fullscreen-btn");
+  if (fullscreenBtn) {
+    const iconSpan = fullscreenBtn.querySelector("span");
+    if (iconSpan) {
+      iconSpan.textContent = isFullscreen ? "⛶" : "⛶";
+    }
+  }
+  
+  // Hide/show three.js container based on fullscreen state
+  const threeContainer = document.getElementById("three-container");
+  if (threeContainer) {
+    threeContainer.style.display = isFullscreen ? "none" : "block";
+  }
+  
+  // Small delay to ensure fullscreen dimensions are available
+  setTimeout(() => {
+    if (isFullscreen) {
+      // Use fullscreen dimensions
+      const gameElement = document.getElementById("game");
+      if (gameElement) {
+        width = gameElement.clientWidth || window.innerWidth;
+        height = gameElement.clientHeight || window.innerHeight;
+      } else {
+        width = window.innerWidth;
+        height = window.innerHeight;
+      }
+    } else {
+      // Use default dimensions
+      width = 800;
+      height = 500;
+    }
+    
+    halfWidth = width / 2;
+    updateGameDimensions();
+  }, 100);
+}
+
+// Listen for fullscreen changes
+document.addEventListener('fullscreenchange', handleFullscreenChange);
+document.addEventListener('webkitfullscreenchange', handleFullscreenChange);
+document.addEventListener('mozfullscreenchange', handleFullscreenChange);
+document.addEventListener('MSFullscreenChange', handleFullscreenChange);
+
+// Handle window resize (for fullscreen)
+window.addEventListener('resize', () => {
+  const isFullscreen = !!(document.fullscreenElement || document.webkitFullscreenElement || 
+                          document.mozFullScreenElement || document.msFullscreenElement);
+  
+  if (isFullscreen) {
+    width = window.innerWidth;
+    height = window.innerHeight;
+    halfWidth = width / 2;
+    updateGameDimensions();
+  }
+});
+
 function init() {
-  game.style.width = width + "px";
-  game.style.height = height + "px";
-
-  hero.style.top = height - 80 + "px";
-  hero.style.left = halfWidth - ASSETS.IMAGE.HERO.width / 2 + "px";
   hero.style.background = `url(${ASSETS.IMAGE.HERO.src})`;
-  hero.style.width = `${ASSETS.IMAGE.HERO.width}px`;
-  hero.style.height = `${ASSETS.IMAGE.HERO.height}px`;
-
+  hero.style.backgroundRepeat = "no-repeat";
+  hero.style.transform = "scale(1.4)";
+  
+  // Set initial background-size (3 frames in sprite sheet)
+  const initialScaleFactor = height / defaultHeight;
+  const spriteSheetWidth = ASSETS.IMAGE.HERO.width * 3 * initialScaleFactor;
+  hero.style.backgroundSize = `${spriteSheetWidth}px ${ASSETS.IMAGE.HERO.height * initialScaleFactor}px`;
+  
   cloud.style.backgroundImage = `url(${ASSETS.IMAGE.SKY.src})`;
+  
+  // Initialize dimensions (this will set hero size and background-size correctly)
+  updateGameDimensions();
 
   // set up three.js 3D view (optional)
   initThreeScene();
@@ -766,10 +1053,7 @@ function init() {
     lines.push(line);
   }
 
-  for (let i = 0; i < 12; i++) {
-    var element = document.createElement("p");
-    highscore.appendChild(element);
-  }
+  // Leaderboard entries will be created dynamically in updateHighscore
   updateHighscore();
 
   reset();
@@ -786,6 +1070,26 @@ function init() {
       update(delta / 1000);
     }
   })();
+}
+
+// Initialize DOM references
+const game = document.getElementById("game");
+const hero = document.getElementById("hero");
+const cloud = document.getElementById("cloud");
+const road = document.getElementById("road");
+const hud = document.getElementById("hud");
+const home = document.getElementById("home");
+const text = document.getElementById("text");
+const time = document.getElementById("time");
+const score = document.getElementById("score");
+const lap = document.getElementById("lap");
+const tacho = document.getElementById("tacho");
+const highscore = document.getElementById("highscore");
+
+// Add fullscreen button event listener
+const fullscreenBtn = document.getElementById("fullscreen-btn");
+if (fullscreenBtn) {
+  fullscreenBtn.addEventListener("click", toggleFullscreen);
 }
 
 init();

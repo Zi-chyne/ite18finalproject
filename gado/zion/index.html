@@ -5,7 +5,11 @@
 
     <title>Gado</title>
     <!-- three.js for optional 3D view -->
-    <script src="https://unpkg.com/three@0.160.0/build/three.min.js"></script>
+    <script type="module">
+      import * as THREE from 'https://unpkg.com/three@0.160.0/build/three.module.js';
+      window.THREE = THREE;
+      window.dispatchEvent(new Event('THREE_LOADED'));
+    </script>
     <link rel="icon" href="icon.png">
     <link
       rel="stylesheet"
@@ -57,6 +61,7 @@
       <span><span>M</span>mute</span>
       <span><span>&lt;</span><span>&gt;</span>move</span>
       <span><span>&lt;</span><span>&gt;</span>accelerate</span>
+      <span id="fullscreen-btn" title="Toggle Fullscreen (F or F11)"><span>⛶</span>fullscreen</span>
     </div>
     <script src="javascript/1.js"></script>
     <script src="javascript/main.js"></script>
